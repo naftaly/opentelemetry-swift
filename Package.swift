@@ -4,6 +4,245 @@
 import Foundation
 import PackageDescription
 
+let OTEL_ENABLE_CORE_ONLY = (ProcessInfo.processInfo.environment["OTEL_ENABLE_CORE_ONLY"] == "1")
+
+let coreProducts: [PackageDescription.Product] = [
+    .library(name: "OpenTelemetryApi", targets: ["OpenTelemetryApi"]),
+    .library(name: "OpenTelemetrySdk", targets: ["OpenTelemetrySdk"]),
+    .library(name: "OpenTelemetryConcurrency", targets: ["OpenTelemetryConcurrency"]),
+]
+
+let coreDependencies: [PackageDescription.Package.Dependency] = [
+    .package(url: "https://github.com/apple/swift-atomics.git", from: "1.3.0")
+]
+
+let coreTargets: [PackageDescription.Target] = [
+    .target(
+        name: "OpenTelemetryApi",
+        dependencies: []
+    ),
+    .target(
+        name: "OpenTelemetrySdk",
+        dependencies: [
+            "OpenTelemetryApi",
+            .product(name: "Atomics", package: "swift-atomics", condition: .when(platforms: [.linux])),
+        ]
+    ),
+    .target(
+        name: "OpenTelemetryConcurrency",
+        dependencies: ["OpenTelemetryApi"]
+    ),
+    
+    .target(
+        name: "OpenTelemetryTestUtils",
+        dependencies: ["OpenTelemetryApi", "OpenTelemetrySdk"]
+    ),
+    
+    .testTarget(
+            name: "OpenTelemetryApiTests",
+            dependencies: ["OpenTelemetryApi", "OpenTelemetryTestUtils"],
+            path: "Tests/OpenTelemetryApiTests"
+        ),
+    .testTarget(
+        name: "OpenTelemetrySdkTests",
+        dependencies: [
+            "OpenTelemetrySdk",
+            "OpenTelemetryConcurrency",
+            "OpenTelemetryTestUtils",
+        ],
+        path: "Tests/OpenTelemetrySdkTests"
+    ),
+    
+]
+
+let extraProducts: [PackageDescription.Product] = OTEL_ENABLE_CORE_ONLY ? [] : [
+    .library(name: "SwiftMetricsShim", targets: ["SwiftMetricsShim"]),
+    .library(name: "StdoutExporter", targets: ["StdoutExporter"]),
+    .library(name: "PrometheusExporter", targets: ["PrometheusExporter"]),
+    .library(name: "OpenTelemetryProtocolExporter", targets: ["OpenTelemetryProtocolExporterGrpc"]),
+    .library(name: "OpenTelemetryProtocolExporterHTTP", targets: ["OpenTelemetryProtocolExporterHttp"]),
+    .library(name: "PersistenceExporter", targets: ["PersistenceExporter"]),
+    .library(name: "InMemoryExporter", targets: ["InMemoryExporter"]),
+    .library(name: "OTelSwiftLog", targets: ["OTelSwiftLog"]),
+    .library(name: "BaggagePropagationProcessor", targets: ["BaggagePropagationProcessor"]),
+    .executable(name: "ConcurrencyContext", targets: ["ConcurrencyContext"]),
+    .executable(name: "loggingTracer", targets: ["LoggingTracer"]),
+    .executable(name: "StableMetricSample", targets: ["StableMetricSample"])
+]
+
+let extraDependencies: [PackageDescription.Package.Dependency] = OTEL_ENABLE_CORE_ONLY ? [] : [
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.83.0"),
+    .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.26.1"),
+    .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.30.0"),
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.6.3"),
+    .package(url: "https://github.com/apple/swift-metrics.git", from: "2.7.0"),
+    .package(url: "https://github.com/mw99/DataCompression", from: "3.9.0"),
+]
+
+let extraTargets: [PackageDescription.Target] = OTEL_ENABLE_CORE_ONLY ? [] : [
+    
+    
+    
+        .target(
+            name: "OTelSwiftLog",
+            dependencies: [
+                "OpenTelemetryApi",
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Sources/Bridges/OTelSwiftLog",
+            exclude: ["README.md"]
+        ),
+    .target(
+        name: "SwiftMetricsShim",
+        dependencies: [
+            "OpenTelemetrySdk",
+            .product(name: "CoreMetrics", package: "swift-metrics"),
+        ],
+        path: "Sources/Importers/SwiftMetricsShim",
+        exclude: ["README.md"]
+    ),
+    .target(
+        name: "PrometheusExporter",
+        dependencies: [
+            "OpenTelemetrySdk",
+            .product(name: "NIO", package: "swift-nio"),
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+        ],
+        path: "Sources/Exporters/Prometheus"
+    ),
+    .target(
+        name: "OpenTelemetryProtocolExporterCommon",
+        dependencies: [
+            "OpenTelemetrySdk",
+            .product(name: "Logging", package: "swift-log"),
+            .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+        ],
+        path: "Sources/Exporters/OpenTelemetryProtocolCommon"
+    ),
+    .target(
+        name: "OpenTelemetryProtocolExporterHttp",
+        dependencies: [
+            "OpenTelemetrySdk",
+            "OpenTelemetryProtocolExporterCommon",
+            .product(
+                name: "DataCompression",
+                package: "DataCompression",
+                condition: .when(platforms: [.macOS, .iOS, .watchOS, .tvOS, .visionOS])
+            ),
+        ],
+        path: "Sources/Exporters/OpenTelemetryProtocolHttp"
+    ),
+    .target(
+        name: "OpenTelemetryProtocolExporterGrpc",
+        dependencies: [
+            "OpenTelemetrySdk",
+            "OpenTelemetryProtocolExporterCommon",
+            .product(name: "GRPC", package: "grpc-swift"),
+        ],
+        path: "Sources/Exporters/OpenTelemetryProtocolGrpc"
+    ),
+    .target(
+        name: "StdoutExporter",
+        dependencies: ["OpenTelemetrySdk"],
+        path: "Sources/Exporters/Stdout"
+    ),
+    .target(
+        name: "InMemoryExporter",
+        dependencies: ["OpenTelemetrySdk"],
+        path: "Sources/Exporters/InMemory"
+    ),
+    .target(
+        name: "PersistenceExporter",
+        dependencies: ["OpenTelemetrySdk"],
+        path: "Sources/Exporters/Persistence",
+        exclude: ["README.md"]
+    ),
+    .target(
+        name: "BaggagePropagationProcessor",
+        dependencies: [
+            "OpenTelemetryApi",
+            "OpenTelemetrySdk",
+        ],
+        path: "Sources/Contrib/Processors/BaggagePropagationProcessor"
+    ),
+    .testTarget(
+        name: "OTelSwiftLogTests",
+        dependencies: ["OTelSwiftLog"],
+        path: "Tests/BridgesTests/OTelSwiftLog"
+    ),
+    
+        .testTarget(
+            name: "SwiftMetricsShimTests",
+            dependencies: [
+                "SwiftMetricsShim",
+                "OpenTelemetrySdk",
+            ],
+            path: "Tests/ImportersTests/SwiftMetricsShim"
+        ),
+    .testTarget(
+        name: "PrometheusExporterTests",
+        dependencies: ["PrometheusExporter"],
+        path: "Tests/ExportersTests/Prometheus"
+    ),
+    .testTarget(
+        name: "OpenTelemetryProtocolExporterTests",
+        dependencies: [
+            "OpenTelemetryProtocolExporterGrpc",
+            "OpenTelemetryProtocolExporterHttp",
+            .product(
+                name: "DataCompression",
+                package: "DataCompression",
+                condition: .when(platforms: [.macOS, .iOS, .watchOS, .tvOS, .visionOS])
+            ),
+            .product(name: "NIO", package: "swift-nio"),
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "NIOTestUtils", package: "swift-nio"),
+        ],
+        path: "Tests/ExportersTests/OpenTelemetryProtocol"
+    ),
+    .testTarget(
+        name: "InMemoryExporterTests",
+        dependencies: ["InMemoryExporter"],
+        path: "Tests/ExportersTests/InMemory"
+    ),
+    .testTarget(
+        name: "PersistenceExporterTests",
+        dependencies: ["PersistenceExporter"],
+        path: "Tests/ExportersTests/PersistenceExporter"
+    ),
+    .testTarget(
+        name: "ContribTests",
+        dependencies: [
+            "BaggagePropagationProcessor",
+            "InMemoryExporter",
+        ]
+    ),
+    .executableTarget(
+        name: "LoggingTracer",
+        dependencies: ["OpenTelemetryApi"],
+        path: "Examples/Logging Tracer"
+    ),
+    .executableTarget(
+        name: "LogsSample",
+        dependencies: [
+            "OpenTelemetrySdk", "OpenTelemetryProtocolExporterGrpc",
+            .product(name: "GRPC", package: "grpc-swift"),
+        ],
+        path: "Examples/Logs Sample"
+    ),
+    .executableTarget(
+        name: "ConcurrencyContext",
+        dependencies: ["OpenTelemetrySdk", "OpenTelemetryConcurrency", "StdoutExporter"],
+        path: "Examples/ConcurrencyContext"
+    ),
+    .executableTarget(
+        name: "StableMetricSample",
+        dependencies: ["OpenTelemetrySdk", "OpenTelemetryProtocolExporterGrpc", "StdoutExporter"],
+        path: "Examples/Stable Metric Sample",
+        exclude: ["README.md"]
+    )
+]
+
 let package = Package(
   name: "opentelemetry-swift",
   platforms: [
@@ -13,230 +252,18 @@ let package = Package(
     .watchOS(.v6),
     .visionOS(.v1),
   ],
-  products: [
-    .library(name: "OpenTelemetryApi", targets: ["OpenTelemetryApi"]),
-    .library(name: "OpenTelemetryConcurrency", targets: ["OpenTelemetryConcurrency"]),
-    .library(name: "OpenTelemetrySdk", targets: ["OpenTelemetrySdk"]),
-    .library(name: "SwiftMetricsShim", targets: ["SwiftMetricsShim"]),
-    .library(name: "StdoutExporter", targets: ["StdoutExporter"]),
-    .library(name: "PrometheusExporter", targets: ["PrometheusExporter"]),
-    .library(name: "OpenTelemetryProtocolExporter", targets: ["OpenTelemetryProtocolExporterGrpc"]),
-    .library(
-      name: "OpenTelemetryProtocolExporterHTTP", targets: ["OpenTelemetryProtocolExporterHttp"]
-    ),
-    .library(name: "PersistenceExporter", targets: ["PersistenceExporter"]),
-    .library(name: "InMemoryExporter", targets: ["InMemoryExporter"]),
-    .library(name: "OTelSwiftLog", targets: ["OTelSwiftLog"]),
-    .library(name: "BaggagePropagationProcessor", targets: ["BaggagePropagationProcessor"]),
-    .executable(name: "ConcurrencyContext", targets: ["ConcurrencyContext"]),
-    .executable(name: "loggingTracer", targets: ["LoggingTracer"]),
-    .executable(name: "StableMetricSample", targets: ["StableMetricSample"]),
-  ],
-  dependencies: [
-    .package(url: "https://github.com/apple/swift-nio.git", from: "2.83.0"),
-    .package(url: "https://github.com/grpc/grpc-swift.git", exact: "1.26.1"),
-    .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.30.0"),
-    .package(url: "https://github.com/apple/swift-log.git", from: "1.6.3"),
-    .package(url: "https://github.com/apple/swift-metrics.git", from: "2.7.0"),
-    .package(url: "https://github.com/apple/swift-atomics.git", from: "1.3.0"),
-    .package(url: "https://github.com/mw99/DataCompression", from: "3.9.0"),
-  ],
-  targets: [
-    .target(
-      name: "OpenTelemetryApi",
-      dependencies: []
-    ),
-    .target(
-      name: "OpenTelemetrySdk",
-      dependencies: [
-        "OpenTelemetryApi",
-        .product(name: "Atomics", package: "swift-atomics", condition: .when(platforms: [.linux])),
-      ]
-    ),
-    .target(
-      name: "OpenTelemetryConcurrency",
-      dependencies: ["OpenTelemetryApi"]
-    ),
-    .target(
-      name: "OpenTelemetryTestUtils",
-      dependencies: ["OpenTelemetryApi", "OpenTelemetrySdk"]
-    ),
-    .target(
-      name: "OTelSwiftLog",
-      dependencies: [
-        "OpenTelemetryApi",
-        .product(name: "Logging", package: "swift-log"),
-      ],
-      path: "Sources/Bridges/OTelSwiftLog",
-      exclude: ["README.md"]
-    ),
-    .target(
-      name: "SwiftMetricsShim",
-      dependencies: [
-        "OpenTelemetrySdk",
-        .product(name: "CoreMetrics", package: "swift-metrics"),
-      ],
-      path: "Sources/Importers/SwiftMetricsShim",
-      exclude: ["README.md"]
-    ),
-    .target(
-      name: "PrometheusExporter",
-      dependencies: [
-        "OpenTelemetrySdk",
-        .product(name: "NIO", package: "swift-nio"),
-        .product(name: "NIOHTTP1", package: "swift-nio"),
-      ],
-      path: "Sources/Exporters/Prometheus"
-    ),
-    .target(
-      name: "OpenTelemetryProtocolExporterCommon",
-      dependencies: [
-        "OpenTelemetrySdk",
-        .product(name: "Logging", package: "swift-log"),
-        .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-      ],
-      path: "Sources/Exporters/OpenTelemetryProtocolCommon"
-    ),
-    .target(
-      name: "OpenTelemetryProtocolExporterHttp",
-      dependencies: [
-        "OpenTelemetrySdk",
-        "OpenTelemetryProtocolExporterCommon",
-        .product(
-          name: "DataCompression",
-          package: "DataCompression",
-          condition: .when(platforms: [.macOS, .iOS, .watchOS, .tvOS, .visionOS])
-        ),
-      ],
-      path: "Sources/Exporters/OpenTelemetryProtocolHttp"
-    ),
-    .target(
-      name: "OpenTelemetryProtocolExporterGrpc",
-      dependencies: [
-        "OpenTelemetrySdk",
-        "OpenTelemetryProtocolExporterCommon",
-        .product(name: "GRPC", package: "grpc-swift"),
-      ],
-      path: "Sources/Exporters/OpenTelemetryProtocolGrpc"
-    ),
-    .target(
-      name: "StdoutExporter",
-      dependencies: ["OpenTelemetrySdk"],
-      path: "Sources/Exporters/Stdout"
-    ),
-    .target(
-      name: "InMemoryExporter",
-      dependencies: ["OpenTelemetrySdk"],
-      path: "Sources/Exporters/InMemory"
-    ),
-    .target(
-      name: "PersistenceExporter",
-      dependencies: ["OpenTelemetrySdk"],
-      path: "Sources/Exporters/Persistence",
-      exclude: ["README.md"]
-    ),
-    .target(
-      name: "BaggagePropagationProcessor",
-      dependencies: [
-        "OpenTelemetryApi",
-        "OpenTelemetrySdk",
-      ],
-      path: "Sources/Contrib/Processors/BaggagePropagationProcessor"
-    ),
-    .testTarget(
-      name: "OTelSwiftLogTests",
-      dependencies: ["OTelSwiftLog"],
-      path: "Tests/BridgesTests/OTelSwiftLog"
-    ),
-    .testTarget(
-      name: "OpenTelemetryApiTests",
-      dependencies: ["OpenTelemetryApi", "OpenTelemetryTestUtils"],
-      path: "Tests/OpenTelemetryApiTests"
-    ),
-    .testTarget(
-      name: "OpenTelemetrySdkTests",
-      dependencies: [
-        "OpenTelemetrySdk",
-        "OpenTelemetryConcurrency",
-        "OpenTelemetryTestUtils",
-      ],
-      path: "Tests/OpenTelemetrySdkTests"
-    ),
-    .testTarget(
-      name: "SwiftMetricsShimTests",
-      dependencies: [
-        "SwiftMetricsShim",
-        "OpenTelemetrySdk",
-      ],
-      path: "Tests/ImportersTests/SwiftMetricsShim"
-    ),
-    .testTarget(
-      name: "PrometheusExporterTests",
-      dependencies: ["PrometheusExporter"],
-      path: "Tests/ExportersTests/Prometheus"
-    ),
-    .testTarget(
-      name: "OpenTelemetryProtocolExporterTests",
-      dependencies: [
-        "OpenTelemetryProtocolExporterGrpc",
-        "OpenTelemetryProtocolExporterHttp",
-        .product(
-          name: "DataCompression",
-          package: "DataCompression",
-          condition: .when(platforms: [.macOS, .iOS, .watchOS, .tvOS, .visionOS])
-        ),
-        .product(name: "NIO", package: "swift-nio"),
-        .product(name: "NIOHTTP1", package: "swift-nio"),
-        .product(name: "NIOTestUtils", package: "swift-nio"),
-      ],
-      path: "Tests/ExportersTests/OpenTelemetryProtocol"
-    ),
-    .testTarget(
-      name: "InMemoryExporterTests",
-      dependencies: ["InMemoryExporter"],
-      path: "Tests/ExportersTests/InMemory"
-    ),
-    .testTarget(
-      name: "PersistenceExporterTests",
-      dependencies: ["PersistenceExporter"],
-      path: "Tests/ExportersTests/PersistenceExporter"
-    ),
-    .testTarget(
-      name: "ContribTests",
-      dependencies: [
-        "BaggagePropagationProcessor",
-        "InMemoryExporter",
-      ]
-    ),
-    .executableTarget(
-      name: "LoggingTracer",
-      dependencies: ["OpenTelemetryApi"],
-      path: "Examples/Logging Tracer"
-    ),
-    .executableTarget(
-      name: "LogsSample",
-      dependencies: [
-        "OpenTelemetrySdk", "OpenTelemetryProtocolExporterGrpc",
-        .product(name: "GRPC", package: "grpc-swift"),
-      ],
-      path: "Examples/Logs Sample"
-    ),
-    .executableTarget(
-      name: "ConcurrencyContext",
-      dependencies: ["OpenTelemetrySdk", "OpenTelemetryConcurrency", "StdoutExporter"],
-      path: "Examples/ConcurrencyContext"
-    ),
-    .executableTarget(
-      name: "StableMetricSample",
-      dependencies: ["OpenTelemetrySdk", "OpenTelemetryProtocolExporterGrpc", "StdoutExporter"],
-      path: "Examples/Stable Metric Sample",
-      exclude: ["README.md"]
-    ),
-  ]
-).addPlatformSpecific()
+  products: coreProducts + extraProducts,
+  dependencies: coreDependencies + extraDependencies,
+  targets: coreTargets + extraTargets
+)
+    .addPlatformSpecificForCore()
+    .addPlatformSpecificForExtras(enabled: !OTEL_ENABLE_CORE_ONLY)
 
 extension Package {
-  func addPlatformSpecific() -> Self {
+    func addPlatformSpecificForCore() -> Self {self}
+    func addPlatformSpecificForExtras(enabled: Bool) -> Self {
+        guard enabled else { return self }
+        
     #if canImport(ObjectiveC)
       dependencies.append(
         .package(url: "https://github.com/undefinedlabs/opentracing-objc", from: "0.5.2")
